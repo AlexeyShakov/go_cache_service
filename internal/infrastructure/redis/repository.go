@@ -13,11 +13,12 @@ type RedisRepository struct {
 }
 
 func (r *RedisRepository) GetAll(ctx context.Context) (map[domain.Key]domain.Value, error) {
+	// TODO а что если в БД слишком много данных?
 	res, err := r.Client.HGetAll(ctx, r.HashKey).Result()
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[domain.Key]domain.Value, len(res)) // TODO объясни, что здесь происходит
+	out := make(map[domain.Key]domain.Value, len(res))
 	for k, v := range res {
 		out[domain.Key(k)] = domain.Value([]byte(v))
 	}

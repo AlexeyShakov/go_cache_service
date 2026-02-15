@@ -1,4 +1,4 @@
-package domain
+package service
 
 type Key string
 type Value []byte

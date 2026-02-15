@@ -2,11 +2,11 @@ package http
 
 import (
 	"errors"
+	"github.com/yourname/go_cache_service/internal/domain/service"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
 	"github.com/yourname/go_cache_service/internal/domain"
-	"github.com/yourname/go_cache_service/internal/service"
 )
 
 type Handlers struct {
@@ -23,7 +23,7 @@ func (h *Handlers) Health(c *echo.Context) error {
 
 func (h *Handlers) GetValue(c *echo.Context) error {
 	keyStr := c.Param("key")
-	key := domain.Key(keyStr)
+	key := service.Key(keyStr)
 
 	val, err := h.svc.GetByKey(c.Request().Context(), key)
 	if err != nil {

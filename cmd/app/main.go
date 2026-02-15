@@ -3,29 +3,29 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/yourname/go_cache_service/internal/domain/service"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
 
 	"github.com/yourname/go_cache_service/internal/cache"
 	transport "github.com/yourname/go_cache_service/internal/infrastructure/http"
 	"github.com/yourname/go_cache_service/internal/infrastructure/redis"
-	"github.com/yourname/go_cache_service/internal/service"
-	"github.com/yourname/go_cache_service/internal/worker"
 )
 
-func main() {
-	// Load .env (optional for local dev)
-	if err := godotenv.Load(); err != nil {
-		log.Println("no .env file found")
-	}
+func newLogger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+}
 
+func main() {
 	// --- build repo (Redis) ---
 	redisCfg, err := redis.LoadRedisConfig()
 	if err != nil {
@@ -51,11 +51,12 @@ func main() {
 	svc := service.NewCacheService(repo, memCache)
 
 	// --- build worker ---
-	refCfg, err := worker.LoadRefresherConfig()
+	refCfg, err := service.LoadRefresherConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
-	ref := worker.NewRefresher(svc, refCfg)
+	logger := newLogger()
+	ref := service.NewRefresher(svc.Refresh, refCfg, logger)
 
 	// --- build HTTP ---
 	h := transport.NewHandlers(svc)
@@ -66,7 +67,12 @@ func main() {
 	defer stop()
 
 	// start worker (stops when appCtx is canceled)
-	go ref.Run(appCtx)
+	go func() {
+		if err := ref.Run(appCtx); err != nil {
+			logger.Error("worker exited with error", "err", err)
+			stop()
+		}
+	}()
 
 	sc := echo.StartConfig{
 		Address: ":8080",

@@ -2,7 +2,7 @@ package redis
 
 import (
 	"context"
-	redislib "github.com/go-redis/redis/v8"
+	redislib "github.com/redis/go-redis/v9"
 )
 
 func NewClient(ctx context.Context, cfg Config) (*redislib.Client, error) {

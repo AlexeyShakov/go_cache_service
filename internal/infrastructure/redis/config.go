@@ -1,37 +1,19 @@
 package redis
 
-import (
-	"os"
-	"strconv"
-)
+import "github.com/ilyakaznacheev/cleanenv"
 
 type Config struct {
-	Address  string
-	User     string
-	Password string
-	DB       int
-	HashKey  string
+	Address  string `env:"REDIS_ADDR" env-required:"true"`
+	User     string `env:"REDIS_USER"`
+	Password string `env:"REDIS_PASSWORD"`
+	DB       int    `env:"REDIS_DB" env-default:"0"`
+	HashKey  string `env:"REDIS_HASH_KEY" env-required:"true"`
 }
 
 func LoadRedisConfig() (Config, error) {
-	address := os.Getenv("REDIS_ADDR")
-	user := os.Getenv("REDIS_USER")
-	passw := os.Getenv("REDIS_PASSWORD")
-	hashKey := os.Getenv("REDIS_HASH_KEY")
-	db := 0
-	if dbEnv := os.Getenv("REDIS_DB"); dbEnv != "" {
-		parsed, err := strconv.Atoi(dbEnv)
-		if err != nil {
-			return Config{}, err
-		}
-		db = parsed
-	}
-	var cfg = Config{
-		Address:  address,
-		User:     user,
-		Password: passw,
-		HashKey:  hashKey,
-		DB:       db,
+	var cfg Config
+	if err := cleanenv.ReadEnv(&cfg); err != nil {
+		return Config{}, err
 	}
 	return cfg, nil
 }

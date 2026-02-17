@@ -5,14 +5,16 @@ import (
 	"errors"
 	"github.com/yourname/go_cache_service/internal/domain"
 	"log/slog"
+	"math/rand"
 	"time"
 )
 
 type Worker struct {
-	refreshFn  func(context.Context) error
-	interval   time.Duration
-	ctxTimeout time.Duration
-	logger     *slog.Logger
+	refreshFn    func(context.Context) error
+	interval     time.Duration
+	ctxTimeout   time.Duration
+	logger       *slog.Logger
+	jitterMaxVal int
 }
 
 // Run запускает бесконечный цикл по интервальному обновлению кэша
@@ -22,7 +24,9 @@ func (r *Worker) Run(ctx context.Context) error {
 		"interval", r.interval.String(),
 		"timeout", r.ctxTimeout.String(),
 	)
-	ticker := time.NewTicker(r.interval)
+	// Добавляем джиттеринг, чтобы разные инстансы приложения не обновляли кэш в один момент,
+	// что даст повышенную нагрузку на БД
+	ticker := time.NewTicker(r.interval + jitterValue(r.jitterMaxVal))
 	defer ticker.Stop()
 	err := r.refresh(ctx)
 	if err != nil {
@@ -76,11 +80,19 @@ func (r *Worker) refresh(ctx context.Context) error {
 	return nil
 }
 
+func jitterValue(jitterMaxVal int) time.Duration {
+	// random int in range [0, jitterMaxVal]
+	n := rand.Intn(jitterMaxVal + 1)
+
+	return time.Duration(n) * time.Minute
+}
+
 func NewRefresher(refresh func(ctx context.Context) error, cfg Config, logger *slog.Logger) *Worker {
 	return &Worker{
-		refreshFn:  refresh,
-		interval:   cfg.Interval,
-		ctxTimeout: cfg.Timeout,
-		logger:     logger,
+		refreshFn:    refresh,
+		interval:     cfg.Interval,
+		ctxTimeout:   cfg.Timeout,
+		logger:       logger,
+		jitterMaxVal: cfg.JitterMaxVal,
 	}
 }

@@ -13,28 +13,33 @@ type RedisRepository struct {
 	HashKey string
 }
 
-func (r *RedisRepository) GetAll(ctx context.Context) (map[service.Key]service.Value, error) {
-	// TODO а что если в БД слишком много данных?
-	res, err := r.Client.HGetAll(ctx, r.HashKey).Result()
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[service.Key]service.Value, len(res))
-	for k, v := range res {
-		out[service.Key(k)] = []byte(v)
-	}
-	return out, nil
-}
-
 func (r *RedisRepository) GetByKey(ctx context.Context, key service.Key) (service.Value, error) {
-	res, err := r.Client.HGet(ctx, r.HashKey, string(key)).Result()
+	res, err := r.Client.HGet(ctx, r.HashKey, key).Result()
 	if err != nil {
 		if errors.Is(err, redislib.Nil) {
-			return nil, domain.ErrNotFound
+			return "", domain.ErrNotFound
 		}
+		return "", err
+	}
+	return res, nil
+}
+
+func (r *RedisRepository) GetByKeys(ctx context.Context, keys []service.Key) ([]string, error) {
+	res, err := r.Client.HMGet(ctx, r.HashKey, keys...).Result()
+	if err != nil {
 		return nil, err
 	}
-	return []byte(res), nil
+	out := make([]string, len(res))
+	for i, v := range res {
+		if v != nil {
+			s, ok := v.(string)
+			if ok {
+				out[i] = s
+			}
+		}
+	}
+	return out, nil
+
 }
 
 func NewRedisRepository(client *redislib.Client, hashKey string) (*RedisRepository, error) {

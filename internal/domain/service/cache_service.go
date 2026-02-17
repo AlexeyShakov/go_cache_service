@@ -12,14 +12,14 @@ import (
 )
 
 type repository interface {
-	GetAll(ctx context.Context) (map[Key]Value, error)
 	GetByKey(ctx context.Context, key Key) (Value, error)
+	GetByKeys(ctx context.Context, keys []Key) ([]string, error)
 }
 
 type CacheService struct {
-	//TODO нужно добавить логику, что если в кэше нет значения, то мы идем в БД, а потом докладываем в кэш
-	repo  repository
-	cache *cache.InMemoryCache
+	repo           repository
+	cache          *cache.InMemoryCache
+	updateBatchLen int
 }
 
 func (r *CacheService) GetByKey(ctx context.Context, key Key) (Value, error) {
@@ -27,8 +27,9 @@ func (r *CacheService) GetByKey(ctx context.Context, key Key) (Value, error) {
 	if !ok {
 		res, err := r.getByKeyFromDB(ctx, key)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
+		r.cache.AddKey(key, res)
 		return res, nil
 	}
 	return res, nil
@@ -37,7 +38,7 @@ func (r *CacheService) GetByKey(ctx context.Context, key Key) (Value, error) {
 func (r *CacheService) getByKeyFromDB(ctx context.Context, key Key) (Value, error) {
 	res, err := r.repo.GetByKey(ctx, key)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	return res, nil
 }
@@ -47,11 +48,16 @@ func (r *CacheService) getByKeyFromCache(key Key) (Value, bool) {
 }
 
 func (r *CacheService) Refresh(ctx context.Context) error {
-	res, err := r.repo.GetAll(ctx)
-	if err != nil {
-		return categorizeRefreshError(ctx, err)
+	keys := r.cache.GetAllKeys()
+	for i := 0; i < len(keys); i += r.updateBatchLen {
+		end := min(i+r.updateBatchLen, len(keys))
+		keysBatch := keys[i:end]
+		newVals, err := r.repo.GetByKeys(ctx, keysBatch)
+		if err != nil {
+			return categorizeRefreshError(ctx, err)
+		}
+		r.cache.ReplaceKeys(keysBatch, newVals)
 	}
-	r.cache.ReplaceAll(res)
 	return nil
 }
 
@@ -79,6 +85,9 @@ func categorizeRefreshError(ctx context.Context, err error) error {
 	return rErr
 }
 
-func NewCacheService(repo repository, cache *cache.InMemoryCache) *CacheService {
-	return &CacheService{repo: repo, cache: cache}
+func NewCacheService(repo repository, cache *cache.InMemoryCache, updateBatchLen int) *CacheService {
+	if updateBatchLen == 0 {
+		updateBatchLen = 100
+	}
+	return &CacheService{repo: repo, cache: cache, updateBatchLen: updateBatchLen}
 }

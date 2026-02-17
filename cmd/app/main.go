@@ -48,7 +48,7 @@ func main() {
 
 	// --- build cache + service ---
 	memCache := cache.NewInMemoryCache()
-	svc := service.NewCacheService(repo, memCache)
+	svc := service.NewCacheService(repo, memCache, redisCfg.UpdateBatchLen)
 
 	// --- build worker ---
 	refCfg, err := service.LoadRefresherConfig()

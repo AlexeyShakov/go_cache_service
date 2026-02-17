@@ -1,4 +1,4 @@
 package service
 
-type Key string
-type Value []byte
+type Key = string
+type Value = string

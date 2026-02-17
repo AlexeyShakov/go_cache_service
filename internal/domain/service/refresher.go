@@ -41,8 +41,10 @@ func (r *Worker) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			//TODO может сделать замер времмени?
 			err := r.refresh(ctx)
 			if err == nil {
+				r.logger.Info("Кэш обновлен")
 				continue
 			}
 			switch {

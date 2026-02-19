@@ -9,6 +9,7 @@ import (
 	"github.com/yourname/go_cache_service/internal/infrastructure/redis"
 	"io"
 	"net"
+	"sync"
 )
 
 type repository interface {
@@ -20,18 +21,35 @@ type CacheService struct {
 	repo           repository
 	cache          *cache.InMemoryCache
 	updateBatchLen int
+	inFlight       map[Key]struct{}
+	mu             sync.Mutex
 }
 
 func (r *CacheService) GetByKey(ctx context.Context, key Key) (Value, error) {
-	res, ok := r.getByKeyFromCache(key)
-	if !ok {
-		res, err := r.getByKeyFromDB(ctx, key)
-		if err != nil {
-			return "", err
-		}
-		r.cache.AddKey(key, res)
+	if res, ok := r.getByKeyFromCache(key); ok {
 		return res, nil
 	}
+
+	r.mu.Lock()
+	if _, exists := r.inFlight[key]; exists {
+		r.mu.Unlock()
+		return "", domain.ErrRepeatedRequest
+	}
+	r.inFlight[key] = struct{}{}
+	r.mu.Unlock()
+
+	defer func() {
+		r.mu.Lock()
+		delete(r.inFlight, key)
+		r.mu.Unlock()
+	}()
+
+	res, err := r.getByKeyFromDB(ctx, key)
+	if err != nil {
+		return "", err
+	}
+
+	r.cache.AddKey(key, res)
 	return res, nil
 }
 
@@ -89,5 +107,6 @@ func NewCacheService(repo repository, cache *cache.InMemoryCache, updateBatchLen
 	if updateBatchLen == 0 {
 		updateBatchLen = 100
 	}
-	return &CacheService{repo: repo, cache: cache, updateBatchLen: updateBatchLen}
+	inFlight := make(map[Key]struct{})
+	return &CacheService{repo: repo, cache: cache, updateBatchLen: updateBatchLen, inFlight: inFlight, mu: sync.Mutex{}}
 }

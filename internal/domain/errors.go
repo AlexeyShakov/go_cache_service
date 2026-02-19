@@ -17,3 +17,7 @@ var ErrUnavailable = errors.New("unavailable error")
 
 // ErrPermanent ошибки, которым не поможет ретрай
 var ErrPermanent = errors.New("unavailable error")
+
+// ErrRepeatedRequest говорит нам о том, что в ДБ уже пошел запрос на получения значения по ключу. Если в этот момент
+// приходят такие же запросы, то мы их отрубаем. Они потом сходят в кэш
+var ErrRepeatedRequest = errors.New("repeated request")

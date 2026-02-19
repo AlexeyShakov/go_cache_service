@@ -60,5 +60,5 @@ func (r *InMemoryCache) ReplaceKeys(keys []string, vals []string) {
 }
 
 func NewInMemoryCache() *InMemoryCache {
-	return &InMemoryCache{cache: make(map[string]string)}
+	return &InMemoryCache{mu: sync.RWMutex{}, cache: make(map[string]string)}
 }

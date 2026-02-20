@@ -5,6 +5,8 @@ import (
 	"github.com/labstack/echo/v5/middleware"
 )
 
+// NewServer создаёт и настраивает HTTP-сервер на базе Echo.
+// Регистрирует middleware и маршруты, связывая их с обработчиками.
 func NewServer(h *Handlers) *echo.Echo {
 	e := echo.New()
 

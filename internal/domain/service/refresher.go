@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// Worker периодически обновляет состояние кэша, вызывая refreshFn.
+// Применяет jitter к интервалу, чтобы избежать синхронных обновлений между инстансами.
+// Останавливается при отмене контекста.
 type Worker struct {
 	refreshFn    func(context.Context) error
 	interval     time.Duration
@@ -17,8 +20,10 @@ type Worker struct {
 	jitterMaxVal int
 }
 
-// Run запускает бесконечный цикл по интервальному обновлению кэша
-// В случае ошибок в рефрешере или отмены контекста цикл останавливается
+// Run запускает цикл обновления с интервалом и jitter.
+// Каждая попытка обновления выполняется с таймаутом ctxTimeout.
+// При domain.ErrCancelled воркер завершает работу без ошибки,
+// при domain.ErrPermanent — завершает работу с ошибкой.
 func (r *Worker) Run(ctx context.Context) error {
 	r.logger.Info("worker started",
 		"interval", r.interval.String(),
@@ -67,6 +72,8 @@ func (r *Worker) Run(ctx context.Context) error {
 	}
 }
 
+// refresh выполняет одну попытку обновления с ограничением по времени.
+// Возвращает ошибку от refreshFn без преобразований.
 func (r *Worker) refresh(ctx context.Context) error {
 	start := time.Now()
 	timeoutCtx, cancel := context.WithTimeout(ctx, r.ctxTimeout)
@@ -80,13 +87,15 @@ func (r *Worker) refresh(ctx context.Context) error {
 	return nil
 }
 
+// jitterValue возвращает случайное смещение интервала в пределах [0..jitterMaxVal] минут.
 func jitterValue(jitterMaxVal int) time.Duration {
-	// random int in range [0, jitterMaxVal]
 	n := rand.Intn(jitterMaxVal + 1)
 
 	return time.Duration(n) * time.Minute
 }
 
+// NewRefresher создаёт Worker на основе refresh-функции и конфигурации.
+// refresh вызывается периодически и должен быть идемпотентным.
 func NewRefresher(refresh func(ctx context.Context) error, cfg Config, logger *slog.Logger) *Worker {
 	return &Worker{
 		refreshFn:    refresh,

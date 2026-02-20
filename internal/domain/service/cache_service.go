@@ -17,6 +17,10 @@ type repository interface {
 	GetByKeys(ctx context.Context, keys []Key) ([]string, error)
 }
 
+// CacheService реализует read-through кэш поверх in-memory слоя и репозитория.
+// На промахе выполняет загрузку из репозитория и обновляет кэш.
+// Поддерживает fail-fast дедупликацию параллельных запросов на один ключ.
+// Безопасен для конкурентного использования.
 type CacheService struct {
 	repo           repository
 	cache          *cache.InMemoryCache
@@ -25,6 +29,10 @@ type CacheService struct {
 	mu             sync.Mutex
 }
 
+// GetByKey возвращает значение по ключу, используя in-memory кэш как быстрый путь.
+// На промахе читает из репозитория и сохраняет результат в кэш.
+// Если загрузка ключа из репозитория уже выполняется, возвращает domain.ErrRepeatedRequest.
+// Безопасен для конкурентного доступа
 func (r *CacheService) GetByKey(ctx context.Context, key Key) (Value, error) {
 	if res, ok := r.getByKeyFromCache(key); ok {
 		return res, nil
@@ -65,6 +73,9 @@ func (r *CacheService) getByKeyFromCache(key Key) (Value, bool) {
 	return r.cache.GetByKey(key)
 }
 
+// Refresh обновляет значения для текущих ключей кэша, читая их из репозитория батчами.
+// Использует ctx для отмены и дедлайнов.
+// Ошибки нормализуются в доменные категории (timeout/cancelled/unavailable/internal).
 func (r *CacheService) Refresh(ctx context.Context) error {
 	keys := r.cache.GetAllKeys()
 	for i := 0; i < len(keys); i += r.updateBatchLen {
@@ -79,6 +90,8 @@ func (r *CacheService) Refresh(ctx context.Context) error {
 	return nil
 }
 
+// categorizeRefreshError преобразует ошибки обновления в доменные категории.
+// Приоритет: ошибки контекста (timeout/cancelled) → транспортные ошибки → ошибки Redis → internal.
 func categorizeRefreshError(ctx context.Context, err error) error {
 	// Контекст (таймаут/отмена) — это управление жизненным циклом, а не "ошибка Redis".
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -103,6 +116,8 @@ func categorizeRefreshError(ctx context.Context, err error) error {
 	return rErr
 }
 
+// NewCacheService создаёт CacheService.
+// updateBatchLen задаёт размер батча при Refresh; если значение 0, используется дефолт.
 func NewCacheService(repo repository, cache *cache.InMemoryCache, updateBatchLen int) *CacheService {
 	if updateBatchLen == 0 {
 		updateBatchLen = 100

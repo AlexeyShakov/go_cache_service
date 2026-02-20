@@ -5,6 +5,9 @@ import (
 	redislib "github.com/redis/go-redis/v9"
 )
 
+// NewClient создаёт и инициализирует клиента Redis на основе конфигурации.
+// Проверяет доступность сервера через Ping.
+// Контекст управляет таймаутом подключения.
 func NewClient(ctx context.Context, cfg Config) (*redislib.Client, error) {
 	db := redislib.NewClient(&redislib.Options{
 		Addr:     cfg.Address,

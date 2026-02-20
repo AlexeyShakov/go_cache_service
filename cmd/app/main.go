@@ -19,20 +19,25 @@ import (
 	"github.com/yourname/go_cache_service/internal/infrastructure/redis"
 )
 
+// newLogger создаёт JSON-логгер для приложения.
 func newLogger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 }
 
+// main является точкой входа приложения.
+// Выполняет инициализацию зависимостей (Redis, кэш, сервис, воркер, HTTP),
+// создаёт единый контекст приложения и запускает сервер и фоновый воркер.
+// Корректно завершает работу по сигналам SIGINT/SIGTERM.
 func main() {
-	// --- build repo (Redis) ---
+	// Инициализация конфигурации и подключение к Redis.
 	redisCfg, err := redis.LoadRedisConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// short startup context just for connecting/ping
+	// Контекст старта используется только для подключения/проверки Redis.
 	startupCtx, cancelStartup := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelStartup()
 
@@ -46,11 +51,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// --- build cache + service ---
+	// Сборка доменных зависимостей: in-memory кэш и сервис.
 	memCache := cache.NewInMemoryCache()
 	svc := service.NewCacheService(repo, memCache, redisCfg.UpdateBatchLen)
 
-	// --- build worker ---
+	// Сборка воркера периодического обновления.
 	refCfg, err := service.LoadRefresherConfig()
 	if err != nil {
 		log.Fatal(err)
@@ -58,15 +63,15 @@ func main() {
 	logger := newLogger()
 	ref := service.NewRefresher(svc.Refresh, refCfg, logger)
 
-	// --- build HTTP ---
+	// Сборка HTTP-слоя.
 	h := transport.NewHandlers(svc)
 	e := transport.NewServer(h)
 
-	// --- one app context for the whole process (worker + server) ---
+	// Единый контекст приложения управляет жизненным циклом HTTP-сервера и воркера.
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// start worker (stops when appCtx is canceled)
+	// Запуск воркера; при ошибке останавливаем приложение.
 	go func() {
 		if err := ref.Run(appCtx); err != nil {
 			logger.Error("worker exited with error", "err", err)
@@ -78,6 +83,7 @@ func main() {
 		Address: ":8080",
 	}
 
+	// Запуск HTTP-сервера до отмены appCtx.
 	if err := sc.Start(appCtx, e); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}

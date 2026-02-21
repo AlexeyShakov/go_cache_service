@@ -1,21 +1,33 @@
 package redis
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	redislib "github.com/redis/go-redis/v9"
 	"github.com/yourname/go_cache_service/internal/domain"
 	"io"
+	"net"
 	"strings"
 )
 
-// IsRedisSideError анализирует ошибку Redis и при необходимости
-// преобразует её в ошибку доменного слоя.
-// Возвращает обёрнутую доменную ошибку либо nil,
-// если ошибка не относится к инфраструктуре Redis.
-func IsRedisSideError(err error) error {
-	// Транспортные ошибки — временные сбои соединения.
+// MapError нормализует инфраструктурные ошибки Redis в доменные категории.
+// Приоритет: ошибки контекста → транспорт → ошибки Redis-сервера → internal.
+func MapError(ctx context.Context, err error) error {
+	// Контекст: таймаут/отмена.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %v", domain.ErrTimeout, err)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		return fmt.Errorf("%w: %v", domain.ErrCancelled, err)
+	}
+
+	// Транспортные ошибки — временные.
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return fmt.Errorf("%w: %v", domain.ErrUnavailable, err)
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
 		return fmt.Errorf("%w: %v", domain.ErrUnavailable, err)
 	}
 
@@ -24,12 +36,12 @@ func IsRedisSideError(err error) error {
 		return fmt.Errorf("%w: %v", domain.ErrPermanent, err)
 	}
 
-	// WRONGTYPE — нарушение ожидаемой схемы хранения.
+	// WRONGTYPE — нарушение схемы.
 	if strings.HasPrefix(err.Error(), "WRONGTYPE") {
 		return fmt.Errorf("%w: %v", domain.ErrInternal, err)
 	}
 
-	// Временные состояния Redis (перезагрузка, кластер недоступен и т.д.).
+	// Временные состояния Redis.
 	if redislib.IsLoadingError(err) ||
 		redislib.IsTryAgainError(err) ||
 		redislib.IsClusterDownError(err) ||
@@ -40,5 +52,6 @@ func IsRedisSideError(err error) error {
 		return fmt.Errorf("%w: %v", domain.ErrUnavailable, err)
 	}
 
-	return nil
+	// Не удалось классифицировать — internal.
+	return fmt.Errorf("%w: %v", domain.ErrInternal, err)
 }

@@ -53,14 +53,15 @@ func main() {
 
 	// Сборка доменных зависимостей: in-memory кэш и сервис.
 	memCache := cache.NewInMemoryCache()
-	svc := service.NewCacheService(repo, memCache, redisCfg.UpdateBatchLen)
+	logger := newLogger()
+	svc := service.NewCacheService(repo, memCache, redisCfg.UpdateBatchLen, logger)
 
 	// Сборка воркера периодического обновления.
 	refCfg, err := service.LoadRefresherConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
-	logger := newLogger()
+
 	ref := service.NewRefresher(svc.Refresh, refCfg, logger)
 
 	// Сборка HTTP-слоя.

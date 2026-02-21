@@ -1,4 +1,4 @@
-package service
+package domain
 
 type Key = string
 type Value = string

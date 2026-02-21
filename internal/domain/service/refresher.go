@@ -31,7 +31,9 @@ func (r *Worker) Run(ctx context.Context) error {
 	)
 	// Добавляем джиттеринг, чтобы разные инстансы приложения не обновляли кэш в один момент,
 	// что даст повышенную нагрузку на БД
-	ticker := time.NewTicker(r.interval + jitterValue(r.jitterMaxVal))
+	jVal := jitterValue(r.jitterMaxVal)
+	r.logger.Info("Значение джиттеринга", "value", jVal.Minutes())
+	ticker := time.NewTicker(r.interval + jVal)
 	defer ticker.Stop()
 	err := r.refresh(ctx)
 	if err != nil {
@@ -50,10 +52,8 @@ func (r *Worker) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			//TODO может сделать замер времмени?
 			err := r.refresh(ctx)
 			if err == nil {
-				r.logger.Info("Кэш обновлен")
 				continue
 			}
 			switch {

@@ -2,19 +2,15 @@ package service
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"github.com/yourname/go_cache_service/internal/cache"
 	"github.com/yourname/go_cache_service/internal/domain"
-	"github.com/yourname/go_cache_service/internal/infrastructure/redis"
-	"io"
-	"net"
+	"log/slog"
 	"sync"
 )
 
 type repository interface {
-	GetByKey(ctx context.Context, key Key) (Value, error)
-	GetByKeys(ctx context.Context, keys []Key) ([]string, error)
+	GetByKey(ctx context.Context, key domain.Key) (domain.Value, error)
+	GetByKeys(ctx context.Context, keys []domain.Key) ([]string, error)
 }
 
 // CacheService реализует read-through кэш поверх in-memory слоя и репозитория.
@@ -25,15 +21,16 @@ type CacheService struct {
 	repo           repository
 	cache          *cache.InMemoryCache
 	updateBatchLen int
-	inFlight       map[Key]struct{}
+	inFlight       map[domain.Key]struct{}
 	mu             sync.Mutex
+	logger         *slog.Logger
 }
 
 // GetByKey возвращает значение по ключу, используя in-memory кэш как быстрый путь.
 // На промахе читает из репозитория и сохраняет результат в кэш.
 // Если загрузка ключа из репозитория уже выполняется, возвращает domain.ErrRepeatedRequest.
 // Безопасен для конкурентного доступа
-func (r *CacheService) GetByKey(ctx context.Context, key Key) (Value, error) {
+func (r *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Value, error) {
 	if res, ok := r.getByKeyFromCache(key); ok {
 		return res, nil
 	}
@@ -61,7 +58,7 @@ func (r *CacheService) GetByKey(ctx context.Context, key Key) (Value, error) {
 	return res, nil
 }
 
-func (r *CacheService) getByKeyFromDB(ctx context.Context, key Key) (Value, error) {
+func (r *CacheService) getByKeyFromDB(ctx context.Context, key domain.Key) (domain.Value, error) {
 	res, err := r.repo.GetByKey(ctx, key)
 	if err != nil {
 		return "", err
@@ -69,7 +66,7 @@ func (r *CacheService) getByKeyFromDB(ctx context.Context, key Key) (Value, erro
 	return res, nil
 }
 
-func (r *CacheService) getByKeyFromCache(key Key) (Value, bool) {
+func (r *CacheService) getByKeyFromCache(key domain.Key) (domain.Value, bool) {
 	return r.cache.GetByKey(key)
 }
 
@@ -81,47 +78,30 @@ func (r *CacheService) Refresh(ctx context.Context) error {
 	for i := 0; i < len(keys); i += r.updateBatchLen {
 		end := min(i+r.updateBatchLen, len(keys))
 		keysBatch := keys[i:end]
+
 		newVals, err := r.repo.GetByKeys(ctx, keysBatch)
 		if err != nil {
-			return categorizeRefreshError(ctx, err)
+			return err
 		}
 		r.cache.ReplaceKeys(keysBatch, newVals)
 	}
+	r.logger.Info("Количество ключей обновлено", "value", len(keys))
 	return nil
-}
-
-// categorizeRefreshError преобразует ошибки обновления в доменные категории.
-// Приоритет: ошибки контекста (timeout/cancelled) → транспортные ошибки → ошибки Redis → internal.
-func categorizeRefreshError(ctx context.Context, err error) error {
-	// Контекст (таймаут/отмена) — это управление жизненным циклом, а не "ошибка Redis".
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return fmt.Errorf("%w: %v", domain.ErrTimeout, err)
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-		return fmt.Errorf("%w: %v", domain.ErrCancelled, err)
-	}
-
-	// Транспортные ошибки (соединение/чтение) — обычно временные, значит Unavailable.
-	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return fmt.Errorf("%w: %v", domain.ErrUnavailable, err)
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return fmt.Errorf("%w: %v", domain.ErrUnavailable, err)
-	}
-	rErr := redis.IsRedisSideError(err) // todo можно ли использовать в сервисе логику из инфры?
-	if rErr == nil {
-		return fmt.Errorf("%w: %v", domain.ErrInternal, err)
-	}
-	return rErr
 }
 
 // NewCacheService создаёт CacheService.
 // updateBatchLen задаёт размер батча при Refresh; если значение 0, используется дефолт.
-func NewCacheService(repo repository, cache *cache.InMemoryCache, updateBatchLen int) *CacheService {
+func NewCacheService(repo repository, cache *cache.InMemoryCache, updateBatchLen int, logger *slog.Logger) *CacheService {
 	if updateBatchLen == 0 {
 		updateBatchLen = 100
 	}
-	inFlight := make(map[Key]struct{})
-	return &CacheService{repo: repo, cache: cache, updateBatchLen: updateBatchLen, inFlight: inFlight, mu: sync.Mutex{}}
+	inFlight := make(map[domain.Key]struct{})
+	return &CacheService{
+		repo:           repo,
+		cache:          cache,
+		updateBatchLen: updateBatchLen,
+		inFlight:       inFlight,
+		mu:             sync.Mutex{},
+		logger:         logger,
+	}
 }

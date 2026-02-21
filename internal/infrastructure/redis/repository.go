@@ -5,7 +5,6 @@ import (
 	"errors"
 	redislib "github.com/redis/go-redis/v9"
 	"github.com/yourname/go_cache_service/internal/domain"
-	"github.com/yourname/go_cache_service/internal/domain/service"
 )
 
 // RedisRepository реализует репозиторий поверх Redis Hash.
@@ -18,13 +17,13 @@ type RedisRepository struct {
 
 // GetByKey читает значение по ключу из Redis.
 // Если ключ отсутствует, возвращает domain.ErrNotFound.
-func (r *RedisRepository) GetByKey(ctx context.Context, key service.Key) (service.Value, error) {
+func (r *RedisRepository) GetByKey(ctx context.Context, key domain.Key) (domain.Value, error) {
 	res, err := r.Client.HGet(ctx, r.HashKey, key).Result()
 	if err != nil {
 		if errors.Is(err, redislib.Nil) {
 			return "", domain.ErrNotFound
 		}
-		return "", err
+		return "", MapError(ctx, err)
 	}
 	return res, nil
 }
@@ -32,10 +31,10 @@ func (r *RedisRepository) GetByKey(ctx context.Context, key service.Key) (servic
 // GetByKeys читает значения по набору ключей из Redis.
 // Возвращает срез значений той же длины, что и keys;
 // для отсутствующих ключей возвращается пустая строка.
-func (r *RedisRepository) GetByKeys(ctx context.Context, keys []service.Key) ([]string, error) {
+func (r *RedisRepository) GetByKeys(ctx context.Context, keys []domain.Key) ([]string, error) {
 	res, err := r.Client.HMGet(ctx, r.HashKey, keys...).Result()
 	if err != nil {
-		return nil, err
+		return nil, MapError(ctx, err)
 	}
 	out := make([]string, len(res))
 	for i, v := range res {

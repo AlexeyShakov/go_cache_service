@@ -9,12 +9,24 @@ import (
 // Проверяет доступность сервера через Ping.
 // Контекст управляет таймаутом подключения.
 func NewClient(ctx context.Context, cfg Config) (*redislib.Client, error) {
-	db := redislib.NewClient(&redislib.Options{
-		Addr:     cfg.Address,
-		Password: cfg.Password,
-		Username: cfg.User,
-		DB:       cfg.DB,
-	})
+
+	// Формируем опции клиента.
+	// Username и Password добавляются только если заданы,
+	// чтобы не отправлять лишний AUTH-запрос.
+	opt := &redislib.Options{
+		Addr: cfg.Address,
+		DB:   cfg.DB,
+	}
+
+	if cfg.Password != "" {
+		opt.Password = cfg.Password
+	}
+	if cfg.User != "" {
+		opt.Username = cfg.User
+	}
+
+	db := redislib.NewClient(opt)
+
 	if err := db.Ping(ctx).Err(); err != nil {
 		return nil, err
 	}

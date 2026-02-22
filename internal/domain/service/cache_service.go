@@ -32,6 +32,11 @@ type CacheService struct {
 // Безопасен для конкурентного доступа
 func (r *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Value, error) {
 	if res, ok := r.getByKeyFromCache(key); ok {
+		r.logger.Debug(
+			"Получили значение через кэш",
+			"key", key,
+			"value", res,
+		)
 		return res, nil
 	}
 
@@ -61,12 +66,19 @@ func (r *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Val
 func (r *CacheService) getByKeyFromDB(ctx context.Context, key domain.Key) (domain.Value, error) {
 	res, err := r.repo.GetByKey(ctx, key)
 	if err != nil {
+		r.logger.Debug("Ошибка при получении ключа", "val", key)
 		return "", err
 	}
+	r.logger.Debug(
+		"Получили значение через БД",
+		"key", key,
+		"value", res,
+	)
 	return res, nil
 }
 
 func (r *CacheService) getByKeyFromCache(key domain.Key) (domain.Value, bool) {
+
 	return r.cache.GetByKey(key)
 }
 

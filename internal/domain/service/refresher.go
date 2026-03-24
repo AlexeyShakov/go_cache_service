@@ -3,10 +3,11 @@ package service
 import (
 	"context"
 	"errors"
-	"github.com/yourname/go_cache_service/internal/domain"
 	"log/slog"
 	"math/rand"
 	"time"
+
+	"github.com/yourname/go_cache_service/internal/domain"
 )
 
 // Worker периодически обновляет состояние кэша, вызывая refreshFn.
@@ -37,15 +38,15 @@ func (r *Worker) Run(ctx context.Context) error {
 	defer ticker.Stop()
 	err := r.refresh(ctx)
 	if err != nil {
-		if errors.Is(err, domain.ErrCancelled) {
-			// Во время shutdown — это нормально, не ошибка.
+		switch {
+		case errors.Is(err, domain.ErrCancelled):
 			r.logger.Info("Воркер отменен")
 			return nil
+		case errors.Is(err, domain.ErrPermanent):
+			r.logger.Error("Первая попытка обновления кэша закончилась неудачей (permanent)", "err", err)
+		default:
+			r.logger.Warn("Первая попытка обновления кэша закончилась временной неудачей (transient)", "err", err)
 		}
-		if errors.Is(err, domain.ErrPermanent) {
-			r.logger.Error("Первая попытка по обновлению кэша закончилась неудачей (permanent)", "err", err)
-		}
-		r.logger.Warn("Первая попытка по обновлению кэша закончилась временной неудачей (transient)", "err", err)
 	}
 	for {
 		select {
@@ -96,7 +97,7 @@ func jitterValue(jitterMaxVal int) time.Duration {
 
 // NewRefresher создаёт Worker на основе refresh-функции и конфигурации.
 // refresh вызывается периодически и должен быть идемпотентным.
-func NewRefresher(refresh func(ctx context.Context) error, cfg Config, logger *slog.Logger) *Worker {
+func NewRefresher(refresh func(ctx context.Context) error, cfg RefreshConfig, logger *slog.Logger) *Worker {
 	return &Worker{
 		refreshFn:    refresh,
 		interval:     cfg.Interval,

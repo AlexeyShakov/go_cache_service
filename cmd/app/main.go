@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/yourname/go_cache_service/internal/domain/service"
 	"log"
 	"log/slog"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/yourname/go_cache_service/internal/domain/service"
 
 	"github.com/labstack/echo/v5"
 
@@ -71,7 +72,7 @@ func main() {
 	svc := service.NewCacheService(repo, memCache, redisCfg.UpdateBatchLen, logger)
 
 	// Сборка воркера периодического обновления.
-	refCfg, err := service.LoadRefresherConfig()
+	refCfg, err := LoadRefresherConfig()
 	if err != nil {
 		log.Fatal(err)
 	}

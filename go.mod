@@ -3,6 +3,7 @@ module github.com/yourname/go_cache_service
 go 1.25.0
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/labstack/echo/v5 v5.0.0
 	github.com/redis/go-redis/v9 v9.17.3

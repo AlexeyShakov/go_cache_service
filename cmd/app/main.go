@@ -80,7 +80,7 @@ func main() {
 	ref := service.NewRefresher(svc.Refresh, refCfg, logger)
 
 	// Сборка HTTP-слоя.
-	h := transport.NewHandlers(svc)
+	h := transport.NewHandlers(svc, logger)
 	e := transport.NewServer(h)
 
 	// Единый контекст приложения управляет жизненным циклом HTTP-сервера и воркера.

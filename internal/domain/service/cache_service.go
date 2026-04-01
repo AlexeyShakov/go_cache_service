@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
-	"github.com/yourname/go_cache_service/internal/cache"
-	"github.com/yourname/go_cache_service/internal/domain"
 	"log/slog"
 	"sync"
+
+	"github.com/yourname/go_cache_service/internal/cache"
+	"github.com/yourname/go_cache_service/internal/domain"
+	"github.com/yourname/go_cache_service/internal/infrastructure/logx"
 )
 
 type repository interface {
@@ -30,9 +32,10 @@ type CacheService struct {
 // На промахе читает из репозитория и сохраняет результат в кэш.
 // Если загрузка ключа из репозитория уже выполняется, возвращает domain.ErrRepeatedRequest.
 // Безопасен для конкурентного доступа
-func (r *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Value, error) {
-	if res, ok := r.getByKeyFromCache(key); ok {
-		r.logger.Debug(
+func (c *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Value, error) {
+	if res, ok := c.getByKeyFromCache(key); ok {
+		logger := logx.WithContext(ctx, c.logger)
+		logger.Debug(
 			"Получили значение через кэш",
 			"key", key,
 			"value", res,
@@ -40,36 +43,37 @@ func (r *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Val
 		return res, nil
 	}
 
-	r.mu.Lock()
-	if _, exists := r.inFlight[key]; exists {
-		r.mu.Unlock()
+	c.mu.Lock()
+	if _, exists := c.inFlight[key]; exists {
+		c.mu.Unlock()
 		return "", domain.ErrRepeatedRequest
 	}
-	r.inFlight[key] = struct{}{}
-	r.mu.Unlock()
+	c.inFlight[key] = struct{}{}
+	c.mu.Unlock()
 
 	defer func() {
-		r.mu.Lock()
-		delete(r.inFlight, key)
-		r.mu.Unlock()
+		c.mu.Lock()
+		delete(c.inFlight, key)
+		c.mu.Unlock()
 	}()
 
-	res, err := r.getByKeyFromDB(ctx, key)
+	res, err := c.getByKeyFromDB(ctx, key)
 	if err != nil {
 		return "", err
 	}
 
-	r.cache.AddKey(key, res)
+	c.cache.AddKey(key, res)
 	return res, nil
 }
 
-func (r *CacheService) getByKeyFromDB(ctx context.Context, key domain.Key) (domain.Value, error) {
-	res, err := r.repo.GetByKey(ctx, key)
+func (c *CacheService) getByKeyFromDB(ctx context.Context, key domain.Key) (domain.Value, error) {
+	res, err := c.repo.GetByKey(ctx, key)
+	logger := logx.WithContext(ctx, c.logger)
 	if err != nil {
-		r.logger.Debug("Ошибка при получении ключа", "val", key)
+		logger.Debug("Ошибка при получении ключа", "val", key)
 		return "", err
 	}
-	r.logger.Debug(
+	logger.Debug(
 		"Получили значение через БД",
 		"key", key,
 		"value", res,
@@ -77,27 +81,28 @@ func (r *CacheService) getByKeyFromDB(ctx context.Context, key domain.Key) (doma
 	return res, nil
 }
 
-func (r *CacheService) getByKeyFromCache(key domain.Key) (domain.Value, bool) {
+func (c *CacheService) getByKeyFromCache(key domain.Key) (domain.Value, bool) {
 
-	return r.cache.GetByKey(key)
+	return c.cache.GetByKey(key)
 }
 
 // Refresh обновляет значения для текущих ключей кэша, читая их из репозитория батчами.
 // Использует ctx для отмены и дедлайнов.
 // Ошибки нормализуются в доменные категории (timeout/cancelled/unavailable/internal).
-func (r *CacheService) Refresh(ctx context.Context) error {
-	keys := r.cache.GetAllKeys()
-	for i := 0; i < len(keys); i += r.updateBatchLen {
-		end := min(i+r.updateBatchLen, len(keys))
+func (c *CacheService) Refresh(ctx context.Context) error {
+	keys := c.cache.GetAllKeys()
+	for i := 0; i < len(keys); i += c.updateBatchLen {
+		end := min(i+c.updateBatchLen, len(keys))
 		keysBatch := keys[i:end]
 
-		newVals, err := r.repo.GetByKeys(ctx, keysBatch)
+		newVals, err := c.repo.GetByKeys(ctx, keysBatch)
 		if err != nil {
 			return err
 		}
-		r.cache.ReplaceKeys(keysBatch, newVals)
+		c.cache.ReplaceKeys(keysBatch, newVals)
 	}
-	r.logger.Info("Количество ключей обновлено", "value", len(keys))
+	logger := logx.WithContext(ctx, c.logger)
+	logger.Info("Количество ключей обновлено", "value", len(keys))
 	return nil
 }
 

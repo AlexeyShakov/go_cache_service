@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yourname/go_cache_service/internal/domain"
+	"github.com/yourname/go_cache_service/internal/infrastructure/logx"
 )
 
 // Worker периодически обновляет состояние кэша, вызывая refreshFn.
@@ -25,27 +26,28 @@ type Worker struct {
 // Каждая попытка обновления выполняется с таймаутом ctxTimeout.
 // При domain.ErrCancelled воркер завершает работу без ошибки,
 // при domain.ErrPermanent — завершает работу с ошибкой.
-func (r *Worker) Run(ctx context.Context) error {
-	r.logger.Info("worker started",
-		"interval", r.interval.String(),
-		"timeout", r.ctxTimeout.String(),
+func (w *Worker) Run(ctx context.Context) error {
+	logger := logx.WithContext(ctx, w.logger)
+	logger.Info("worker started",
+		"interval", w.interval.String(),
+		"timeout", w.ctxTimeout.String(),
 	)
 	// Добавляем джиттеринг, чтобы разные инстансы приложения не обновляли кэш в один момент,
 	// что даст повышенную нагрузку на БД
-	jVal := jitterValue(r.jitterMaxVal)
-	r.logger.Info("Значение джиттеринга", "value", jVal.Minutes())
-	ticker := time.NewTicker(r.interval + jVal)
+	jVal := jitterValue(w.jitterMaxVal)
+	logger.Info("Значение джиттеринга", "value", jVal.Minutes())
+	ticker := time.NewTicker(w.interval + jVal)
 	defer ticker.Stop()
-	err := r.refresh(ctx)
+	err := w.refresh(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrCancelled):
-			r.logger.Info("Воркер отменен")
+			logger.Info("Воркер отменен")
 			return nil
 		case errors.Is(err, domain.ErrPermanent):
-			r.logger.Error("Первая попытка обновления кэша закончилась неудачей (permanent)", "err", err)
+			logger.Error("Первая попытка обновления кэша закончилась неудачей (permanent)", "err", err)
 		default:
-			r.logger.Warn("Первая попытка обновления кэша закончилась временной неудачей (transient)", "err", err)
+			logger.Warn("Первая попытка обновления кэша закончилась временной неудачей (transient)", "err", err)
 		}
 	}
 	for {
@@ -53,21 +55,21 @@ func (r *Worker) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			err := r.refresh(ctx)
+			err := w.refresh(ctx)
 			if err == nil {
 				continue
 			}
 			switch {
 			case errors.Is(err, domain.ErrCancelled):
 				// Во время shutdown — это нормально, не ошибка.
-				r.logger.Info("Воркер отменен")
+				logger.Info("Воркер отменен")
 				return nil
 
 			case errors.Is(err, domain.ErrPermanent):
-				r.logger.Error("Попытка обновления кэша закончилась неудачей (permanent)", "err", err)
+				logger.Error("Попытка обновления кэша закончилась неудачей (permanent)", "err", err)
 				return err
 			default:
-				r.logger.Warn("Попытка обновления кэша закончилась временной неудачей (permanent)", "err", err)
+				logger.Warn("Попытка обновления кэша закончилась временной неудачей (permanent)", "err", err)
 			}
 		}
 	}
@@ -75,16 +77,17 @@ func (r *Worker) Run(ctx context.Context) error {
 
 // refresh выполняет одну попытку обновления с ограничением по времени.
 // Возвращает ошибку от refreshFn без преобразований.
-func (r *Worker) refresh(ctx context.Context) error {
+func (w *Worker) refresh(ctx context.Context) error {
 	start := time.Now()
-	timeoutCtx, cancel := context.WithTimeout(ctx, r.ctxTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, w.ctxTimeout)
 	defer cancel()
-	err := r.refreshFn(timeoutCtx)
+	err := w.refreshFn(timeoutCtx)
 	if err != nil {
 		return err
 	}
 	dur := time.Since(start)
-	r.logger.Info("cache refreshed", "duration_ms", dur.Milliseconds())
+	logger := logx.WithContext(ctx, w.logger)
+	logger.Info("cache refreshed", "duration_ms", dur.Milliseconds())
 	return nil
 }
 

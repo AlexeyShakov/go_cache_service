@@ -5,10 +5,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
+	"github.com/yourname/go_cache_service/internal/infrastructure/logx"
 )
-
-// RequestIDKey — ключ, по которому request_id хранится в context.Context.
-const RequestIDKey string = "request_id"
 
 // RequestID извлекает X-Request-Id из входящего запроса.
 // Если заголовок не передан клиентом, генерирует новый.
@@ -25,7 +23,7 @@ func RequestID() echo.MiddlewareFunc {
 			}
 
 			// Кладём request_id в context.Context текущего HTTP-запроса.
-			ctx := context.WithValue(req.Context(), RequestIDKey, requestID)
+			ctx := context.WithValue(req.Context(), logx.HttpID, requestID)
 
 			// Подменяем request внутри echo.Context, чтобы дальше все обработчики
 			// и сервисы работали уже с новым context.

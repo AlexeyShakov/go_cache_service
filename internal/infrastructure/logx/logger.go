@@ -3,8 +3,12 @@ package logx
 import (
 	"context"
 	"log/slog"
+)
 
-	httpmiddleware "github.com/yourname/go_cache_service/internal/infrastructure/http/middleware"
+const (
+	HttpID    string = "request_id"
+	WorkerID  string = "worker_id"
+	RefreshID string = "refresh_id"
 )
 
 // WithContext возвращает логгер, обогащённый значениями из context.Context.
@@ -17,11 +21,14 @@ func WithContext(ctx context.Context, logger *slog.Logger) *slog.Logger {
 	if logger == nil {
 		logger = slog.Default()
 	}
-
-	requestID, ok := ctx.Value(httpmiddleware.RequestIDKey).(string)
-	if !ok || requestID == "" {
-		return logger
+	if v, ok := ctx.Value(HttpID).(string); ok && v != "" {
+		logger = logger.With(HttpID, v)
 	}
-
-	return logger.With(httpmiddleware.RequestIDKey, requestID)
+	if v, ok := ctx.Value(WorkerID).(string); ok && v != "" {
+		logger = logger.With(WorkerID, v)
+	}
+	if v, ok := ctx.Value(RefreshID).(string); ok && v != "" {
+		logger = logger.With(RefreshID, v)
+	}
+	return logger
 }

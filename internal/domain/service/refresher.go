@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/yourname/go_cache_service/internal/domain"
 	"github.com/yourname/go_cache_service/internal/infrastructure/logx"
 )
@@ -27,7 +28,8 @@ type Worker struct {
 // При domain.ErrCancelled воркер завершает работу без ошибки,
 // при domain.ErrPermanent — завершает работу с ошибкой.
 func (w *Worker) Run(ctx context.Context) error {
-	logger := logx.WithContext(ctx, w.logger)
+	extCtx := operationCtx(ctx, []string{logx.WorkerID, logx.RefreshID})
+	logger := logx.WithContext(extCtx, w.logger)
 	logger.Info("worker started",
 		"interval", w.interval.String(),
 		"timeout", w.ctxTimeout.String(),
@@ -38,7 +40,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	logger.Info("Значение джиттеринга", "value", jVal.Minutes())
 	ticker := time.NewTicker(w.interval + jVal)
 	defer ticker.Stop()
-	err := w.refresh(ctx)
+	err := w.refresh(extCtx)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrCancelled):
@@ -51,11 +53,13 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 	}
 	for {
+		refreshCtx := operationCtx(extCtx, []string{logx.RefreshID})
+		logger := logx.WithContext(refreshCtx, w.logger)
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			err := w.refresh(ctx)
+			err := w.refresh(refreshCtx)
 			if err == nil {
 				continue
 			}
@@ -89,6 +93,20 @@ func (w *Worker) refresh(ctx context.Context) error {
 	logger := logx.WithContext(ctx, w.logger)
 	logger.Info("cache refreshed", "duration_ms", dur.Milliseconds())
 	return nil
+}
+
+// operationCtx добавляет в контекст информацию об айди воркера или айди для итерации рефреша
+func operationCtx(ctx context.Context, actions []string) context.Context {
+	for _, action := range actions {
+		switch action {
+		case logx.WorkerID:
+			ctx = context.WithValue(ctx, logx.WorkerID, uuid.NewString())
+
+		case logx.RefreshID:
+			ctx = context.WithValue(ctx, logx.RefreshID, uuid.NewString())
+		}
+	}
+	return ctx
 }
 
 // jitterValue возвращает случайное смещение интервала в пределах [0..jitterMaxVal] минут.

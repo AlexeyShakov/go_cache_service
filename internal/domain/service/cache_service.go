@@ -33,6 +33,7 @@ type CacheService struct {
 // Если загрузка ключа из репозитория уже выполняется, возвращает domain.ErrRepeatedRequest.
 // Безопасен для конкурентного доступа
 func (c *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Value, error) {
+	// Сначала смотрим в кэше
 	if res, ok := c.getByKeyFromCache(key); ok {
 		logger := logx.WithContext(ctx, c.logger)
 		logger.Debug(
@@ -42,7 +43,7 @@ func (c *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Val
 		)
 		return res, nil
 	}
-
+	// Если в кэше нет, то проверим, вдруг по этому ключу мы уже идем в БД
 	c.mu.Lock()
 	if _, exists := c.inFlight[key]; exists {
 		c.mu.Unlock()
@@ -51,12 +52,16 @@ func (c *CacheService) GetByKey(ctx context.Context, key domain.Key) (domain.Val
 	c.inFlight[key] = struct{}{}
 	c.mu.Unlock()
 
+	// В самом конце удалим ключ из inFlight, т.к. ключ уже должен быть в кэше
+	// Если ключа в кэше не будет, то мы должны следующей горутине дать шанс на получение значения,
+	// вдруг его уже добавили м БД
 	defer func() {
 		c.mu.Lock()
 		delete(c.inFlight, key)
 		c.mu.Unlock()
 	}()
 
+	// Получаем значение по ключу из БД и кладем в кэш
 	res, err := c.getByKeyFromDB(ctx, key)
 	if err != nil {
 		return "", err

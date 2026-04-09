@@ -48,6 +48,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			return nil
 		case errors.Is(err, domain.ErrPermanent):
 			logger.Error("Первая попытка обновления кэша закончилась неудачей (permanent)", "err", err)
+			return err
 		default:
 			logger.Warn("Первая попытка обновления кэша закончилась временной неудачей (transient)", "err", err)
 		}
@@ -73,7 +74,7 @@ func (w *Worker) Run(ctx context.Context) error {
 				logger.Error("Попытка обновления кэша закончилась неудачей (permanent)", "err", err)
 				return err
 			default:
-				logger.Warn("Попытка обновления кэша закончилась временной неудачей (permanent)", "err", err)
+				logger.Warn("Попытка обновления кэша закончилась временной неудачей (transient)", "err", err)
 			}
 		}
 	}

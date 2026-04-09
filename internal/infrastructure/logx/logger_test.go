@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log/slog"
 	"testing"
+
+	"github.com/yourname/go_cache_service/internal/testutils"
 )
 
 const (
@@ -20,7 +21,7 @@ const (
 func TestWithContextAllKeys(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := initLogger(&buf)
+	logger := testutils.InitLogger(&buf)
 	ctx := initCtx(map[string]string{
 		WorkerID:  WorkerUUID,
 		RefreshID: RefreshUUID,
@@ -42,7 +43,7 @@ func TestWithContextAllKeys(t *testing.T) {
 func TestWithContextOnlyRequest(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := initLogger(&buf)
+	logger := testutils.InitLogger(&buf)
 	ctx := initCtx(map[string]string{
 		HttpID: RequestUUID,
 	})
@@ -62,7 +63,7 @@ func TestWithContextOnlyRequest(t *testing.T) {
 func TestWithContextOnlyWorker(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := initLogger(&buf)
+	logger := testutils.InitLogger(&buf)
 	ctx := initCtx(map[string]string{
 		WorkerID: WorkerUUID,
 	})
@@ -82,7 +83,7 @@ func TestWithContextOnlyWorker(t *testing.T) {
 func TestWithContextOnlyRefresh(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := initLogger(&buf)
+	logger := testutils.InitLogger(&buf)
 	ctx := initCtx(map[string]string{
 		RefreshID: RefreshUUID,
 	})
@@ -103,7 +104,7 @@ func TestWithContextOnlyRefresh(t *testing.T) {
 func TestWithContextOtherKeys(t *testing.T) {
 	var buf bytes.Buffer
 
-	logger := initLogger(&buf)
+	logger := testutils.InitLogger(&buf)
 	keyUUID := "something-123"
 
 	ctx := initCtx(map[string]string{
@@ -122,13 +123,6 @@ func TestWithContextOtherKeys(t *testing.T) {
 	if got, ok := logRecord["Something"]; ok {
 		t.Fatalf("did not expect field %q in log, got %v", "Something", got)
 	}
-}
-
-// initLogger инициализирует объект логгера.
-func initLogger(out *bytes.Buffer) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
 }
 
 // initCtx инициализирует context.Context с переданными ключами.

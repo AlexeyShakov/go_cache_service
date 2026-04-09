@@ -9,47 +9,12 @@ import (
 
 	cache2 "github.com/yourname/go_cache_service/internal/cache"
 	"github.com/yourname/go_cache_service/internal/domain"
+	"github.com/yourname/go_cache_service/internal/testutils"
 )
-
-// InMemoryRepo - fake репозиторий для тестов
-type InMemoryRepo struct {
-	storage map[string]string
-}
-
-func (i *InMemoryRepo) GetByKey(ctx context.Context, key domain.Key) (domain.Value, error) {
-	if val, ok := i.storage[key]; ok {
-		return val, nil
-	}
-	return "", domain.ErrNotFound
-}
-
-func (i *InMemoryRepo) GetByKeys(ctx context.Context, keys []domain.Key) ([]string, error) {
-	out := make([]string, len(keys))
-	for idx, key := range keys {
-		val, ok := i.storage[key]
-		if ok {
-			out[idx] = val
-			continue
-		}
-		out[idx] = ""
-	}
-	return out, nil
-}
-
-func (i *InMemoryRepo) AddData(data map[string]string) {
-	for k, v := range data {
-		i.storage[k] = v
-	}
-}
-
-func newRepo() *InMemoryRepo {
-	storage := map[string]string{}
-	return &InMemoryRepo{storage}
-}
 
 // TestGetByKeyInCache тестируем получение ключа, который лежит в кэше
 func TestGetByKeyInCache(t *testing.T) {
-	repo := newRepo()
+	repo := testutils.NewRepo()
 	cache := cache2.NewInMemoryCache()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	srv := NewCacheService(repo, cache, 0, logger)
@@ -70,7 +35,7 @@ func TestGetByKeyInCache(t *testing.T) {
 
 // TestGetByKeyInCache тестируем получение ключа, который лежит в БД
 func TestGetByKeyInDB(t *testing.T) {
-	repo := newRepo()
+	repo := testutils.NewRepo()
 	cache := cache2.NewInMemoryCache()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	srv := NewCacheService(repo, cache, 0, logger)
@@ -88,7 +53,7 @@ func TestGetByKeyInDB(t *testing.T) {
 
 // TestGetByKeyAbsent тестируем получение ключа, которого нет ни в кэше, ни в БД
 func TestGetByKeyAbsent(t *testing.T) {
-	repo := newRepo()
+	repo := testutils.NewRepo()
 	cache := cache2.NewInMemoryCache()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	srv := NewCacheService(repo, cache, 0, logger)
@@ -110,7 +75,7 @@ func TestGetByKeyAbsent(t *testing.T) {
 
 // TestRefresh тестируем мы благополучно обновили ключи в кэше из БД
 func TestRefresh(t *testing.T) {
-	repo := newRepo()
+	repo := testutils.NewRepo()
 	cache := cache2.NewInMemoryCache()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	srv := NewCacheService(repo, cache, 0, logger)

@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"testing"
 
-	cache2 "github.com/yourname/go_cache_service/internal/cache"
 	"github.com/yourname/go_cache_service/internal/domain"
+	cache2 "github.com/yourname/go_cache_service/internal/infrastructure/cache"
 	"github.com/yourname/go_cache_service/internal/testutils"
 )
 

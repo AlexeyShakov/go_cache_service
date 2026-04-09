@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/yourname/go_cache_service/internal/cache"
 	"github.com/yourname/go_cache_service/internal/domain"
+	"github.com/yourname/go_cache_service/internal/infrastructure/cache"
 	"github.com/yourname/go_cache_service/internal/infrastructure/logx"
 )
 

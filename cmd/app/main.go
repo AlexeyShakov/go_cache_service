@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/yourname/go_cache_service/internal/domain/service"
+	"github.com/yourname/go_cache_service/internal/infrastructure/cache"
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/yourname/go_cache_service/internal/cache"
 	transport "github.com/yourname/go_cache_service/internal/infrastructure/http"
 	"github.com/yourname/go_cache_service/internal/infrastructure/redis"
 )

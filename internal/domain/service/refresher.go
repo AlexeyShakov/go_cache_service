@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"errors"
-	"github.com/yourname/go_cache_service/internal/domain"
 	"log/slog"
 	"math/rand"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/yourname/go_cache_service/internal/domain"
+	"github.com/yourname/go_cache_service/internal/infrastructure/logx"
 )
 
 // Worker периодически обновляет состояние кэша, вызывая refreshFn.
@@ -24,49 +27,54 @@ type Worker struct {
 // Каждая попытка обновления выполняется с таймаутом ctxTimeout.
 // При domain.ErrCancelled воркер завершает работу без ошибки,
 // при domain.ErrPermanent — завершает работу с ошибкой.
-func (r *Worker) Run(ctx context.Context) error {
-	r.logger.Info("worker started",
-		"interval", r.interval.String(),
-		"timeout", r.ctxTimeout.String(),
+func (w *Worker) Run(ctx context.Context) error {
+	extCtx := operationCtx(ctx, []string{logx.WorkerID, logx.RefreshID})
+	logger := logx.WithContext(extCtx, w.logger)
+	logger.Info("worker started",
+		"interval", w.interval.String(),
+		"timeout", w.ctxTimeout.String(),
 	)
 	// Добавляем джиттеринг, чтобы разные инстансы приложения не обновляли кэш в один момент,
 	// что даст повышенную нагрузку на БД
-	jVal := jitterValue(r.jitterMaxVal)
-	r.logger.Info("Значение джиттеринга", "value", jVal.Minutes())
-	ticker := time.NewTicker(r.interval + jVal)
+	jVal := jitterValue(w.jitterMaxVal)
+	logger.Info("Значение джиттеринга", "value", jVal.Minutes())
+	ticker := time.NewTicker(w.interval + jVal)
 	defer ticker.Stop()
-	err := r.refresh(ctx)
+	err := w.refresh(extCtx)
 	if err != nil {
-		if errors.Is(err, domain.ErrCancelled) {
-			// Во время shutdown — это нормально, не ошибка.
-			r.logger.Info("Воркер отменен")
+		switch {
+		case errors.Is(err, domain.ErrCancelled):
+			logger.Info("Воркер отменен")
 			return nil
+		case errors.Is(err, domain.ErrPermanent):
+			logger.Error("Первая попытка обновления кэша закончилась неудачей (permanent)", "err", err)
+			return err
+		default:
+			logger.Warn("Первая попытка обновления кэша закончилась временной неудачей (transient)", "err", err)
 		}
-		if errors.Is(err, domain.ErrPermanent) {
-			r.logger.Error("Первая попытка по обновлению кэша закончилась неудачей (permanent)", "err", err)
-		}
-		r.logger.Warn("Первая попытка по обновлению кэша закончилась временной неудачей (transient)", "err", err)
 	}
 	for {
+		refreshCtx := operationCtx(extCtx, []string{logx.RefreshID})
+		logger := logx.WithContext(refreshCtx, w.logger)
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			err := r.refresh(ctx)
+			err := w.refresh(refreshCtx)
 			if err == nil {
 				continue
 			}
 			switch {
 			case errors.Is(err, domain.ErrCancelled):
 				// Во время shutdown — это нормально, не ошибка.
-				r.logger.Info("Воркер отменен")
+				logger.Info("Воркер отменен")
 				return nil
 
 			case errors.Is(err, domain.ErrPermanent):
-				r.logger.Error("Попытка обновления кэша закончилась неудачей (permanent)", "err", err)
+				logger.Error("Попытка обновления кэша закончилась неудачей (permanent)", "err", err)
 				return err
 			default:
-				r.logger.Warn("Попытка обновления кэша закончилась временной неудачей (permanent)", "err", err)
+				logger.Warn("Попытка обновления кэша закончилась временной неудачей (transient)", "err", err)
 			}
 		}
 	}
@@ -74,17 +82,32 @@ func (r *Worker) Run(ctx context.Context) error {
 
 // refresh выполняет одну попытку обновления с ограничением по времени.
 // Возвращает ошибку от refreshFn без преобразований.
-func (r *Worker) refresh(ctx context.Context) error {
+func (w *Worker) refresh(ctx context.Context) error {
 	start := time.Now()
-	timeoutCtx, cancel := context.WithTimeout(ctx, r.ctxTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, w.ctxTimeout)
 	defer cancel()
-	err := r.refreshFn(timeoutCtx)
+	err := w.refreshFn(timeoutCtx)
 	if err != nil {
 		return err
 	}
 	dur := time.Since(start)
-	r.logger.Info("cache refreshed", "duration_ms", dur.Milliseconds())
+	logger := logx.WithContext(ctx, w.logger)
+	logger.Info("cache refreshed", "duration_ms", dur.Milliseconds())
 	return nil
+}
+
+// operationCtx добавляет в контекст информацию об айди воркера или айди для итерации рефреша
+func operationCtx(ctx context.Context, actions []string) context.Context {
+	for _, action := range actions {
+		switch action {
+		case logx.WorkerID:
+			ctx = context.WithValue(ctx, logx.WorkerID, uuid.NewString())
+
+		case logx.RefreshID:
+			ctx = context.WithValue(ctx, logx.RefreshID, uuid.NewString())
+		}
+	}
+	return ctx
 }
 
 // jitterValue возвращает случайное смещение интервала в пределах [0..jitterMaxVal] минут.
@@ -96,7 +119,7 @@ func jitterValue(jitterMaxVal int) time.Duration {
 
 // NewRefresher создаёт Worker на основе refresh-функции и конфигурации.
 // refresh вызывается периодически и должен быть идемпотентным.
-func NewRefresher(refresh func(ctx context.Context) error, cfg Config, logger *slog.Logger) *Worker {
+func NewRefresher(refresh func(ctx context.Context) error, cfg RefreshConfig, logger *slog.Logger) *Worker {
 	return &Worker{
 		refreshFn:    refresh,
 		interval:     cfg.Interval,

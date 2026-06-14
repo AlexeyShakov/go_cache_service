@@ -1,20 +1,30 @@
 package service
 
 import (
-	"github.com/ilyakaznacheev/cleanenv"
+	"errors"
 	"time"
 )
 
-type Config struct {
-	Timeout      time.Duration `env:"REFRESH_TIMEOUT" env-default:"200ms"`
-	Interval     time.Duration `env:"REFRESH_INTERVAL" env-default:"5s"`
-	JitterMaxVal int           `env:"JITTER_MAX_VALUE" env-default:"10"`
+type RefreshConfig struct {
+	Timeout      time.Duration
+	Interval     time.Duration
+	JitterMaxVal int
 }
 
-func LoadRefresherConfig() (Config, error) {
-	var cfg Config
-	if err := cleanenv.ReadEnv(&cfg); err != nil {
-		return Config{}, err
+// NewRefreshConfig валидирует переданные параметры и инициализирует доменный конфиг для рефрешера
+func NewRefreshConfig(timeout, interval time.Duration, jitterMaxVal int) (RefreshConfig, error) {
+	if timeout <= 0 {
+		return RefreshConfig{}, errors.New("timeout must be > 0")
 	}
-	return cfg, nil
+	if interval <= 0 {
+		return RefreshConfig{}, errors.New("interval must be > 0")
+	}
+	if jitterMaxVal < 0 {
+		return RefreshConfig{}, errors.New("jitterMaxVal must be >= 0")
+	}
+	return RefreshConfig{
+		Timeout:      timeout,
+		Interval:     interval,
+		JitterMaxVal: jitterMaxVal,
+	}, nil
 }

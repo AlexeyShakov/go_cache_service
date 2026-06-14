@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/yourname/go_cache_service/internal/domain/service"
 	"log"
 	"log/slog"
 	"net/http"
@@ -13,9 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/yourname/go_cache_service/internal/domain/service"
+	"github.com/yourname/go_cache_service/internal/infrastructure/cache"
+
 	"github.com/labstack/echo/v5"
 
-	"github.com/yourname/go_cache_service/internal/cache"
 	transport "github.com/yourname/go_cache_service/internal/infrastructure/http"
 	"github.com/yourname/go_cache_service/internal/infrastructure/redis"
 )
@@ -71,7 +72,7 @@ func main() {
 	svc := service.NewCacheService(repo, memCache, redisCfg.UpdateBatchLen, logger)
 
 	// Сборка воркера периодического обновления.
-	refCfg, err := service.LoadRefresherConfig()
+	refCfg, err := LoadRefresherConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -79,7 +80,7 @@ func main() {
 	ref := service.NewRefresher(svc.Refresh, refCfg, logger)
 
 	// Сборка HTTP-слоя.
-	h := transport.NewHandlers(svc)
+	h := transport.NewHandlers(svc, logger)
 	e := transport.NewServer(h)
 
 	// Единый контекст приложения управляет жизненным циклом HTTP-сервера и воркера.
